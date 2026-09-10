@@ -1283,24 +1283,26 @@ const updateCharOverrides = (charIndex, updates) => {
                                                     }}
                                                 >
 {layer.runs && layer.runs.length > 0 ? (
-    layer.text.split('').map((char, index) => {
-        const charOver = layer.charOverrides?.[index] || {};
-        const activeRun = layer.runs.find(r => index >= r.start && index < r.end);
-        return (
-            <span 
-                key={index}
-                style={{
-                    color: charOver.color || activeRun?.color || layer.color,
-                    fontSize: charOver.fontSize ? `${charOver.fontSize}px` : activeRun?.fontSize ? `${activeRun.fontSize}px` : undefined,
-                    fontFamily: charOver.fontFamily ? `"${charOver.fontFamily}"` : activeRun?.fontFamily ? `"${activeRun.fontFamily}"` : undefined,
-                    fontWeight: charOver.bold ? '700' : undefined,
-                    fontStyle: charOver.italic ? 'italic' : undefined,
-                    transform: `translateX(${charOver.offsetX || 0}px) translateY(${charOver.offsetY || 0}px) rotate(${charOver.rotation || 0}deg) scaleX(${charOver.scaleX || 1}) scaleY(${charOver.scaleY || 1})`,
-                    display: 'inline-block'
-                }}
-            >
-                {char}
-            </span>
+layer.text.split('').map((char, index) => {
+    const charOver = layer.charOverrides?.[index] || {};
+    const activeRun = layer.runs.find(r => index >= r.start && index < r.end);
+    return (
+        <span 
+            key={index}
+            style={{
+                color: charOver.color || activeRun?.color || layer.color,
+                fontSize: charOver.fontSize ? `${charOver.fontSize}px` : activeRun?.fontSize ? `${activeRun.fontSize}px` : undefined,
+                fontFamily: charOver.fontFamily ? `"${charOver.fontFamily}"` : activeRun?.fontFamily ? `"${activeRun.fontFamily}"` : undefined,
+                fontWeight: charOver.bold ? '700' : undefined,
+                fontStyle: charOver.italic ? 'italic' : undefined,
+                transform: `translateX(${charOver.offsetX || 0}px) translateY(${charOver.offsetY || 0}px) rotate(${charOver.rotation || 0}deg) scaleX(${charOver.scaleX || 1}) scaleY(${charOver.scaleY || 1})`,
+                display: 'inline-block'
+            }}
+        >
+            {char}
+        </span>
+    );
+})
         );
     })
 ) : (
