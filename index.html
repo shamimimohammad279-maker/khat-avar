@@ -356,7 +356,8 @@
             const [editorMode, setEditorMode] = useState('layer'); // 'layer' | 'text_edit' | 'character'
             const [textSelectionRange, setTextSelectionRange] = useState({ start: 0, end: 0 });
             const [selectedCharIndex, setSelectedCharIndex] = useState(null);
-
+            const [selectedWordData, setSelectedWordData] = useState(null); // { word, startIndex, properties }
+            const [selectedCharData, setSelectedCharData] = useState(null); // { char, index, properties }
             // --- DAY 1 UX ENHANCEMENTS: INLINE EDITING & MOBILE BOTTOM SHEET ---
             const [isEditingInline, setIsEditingInline] = useState(false);
             const [bottomSheetOpen, setBottomSheetOpen] = useState(true);
@@ -638,10 +639,45 @@
                 showToastMessage('فرمت روی محدوده انتخابی اعمال شد');
             };
 
-            const selectWordAtIndex = (wordText, startIndex) => {
-                setTextSelectionRange({ start: startIndex, end: startIndex + wordText.length });
-            };
+          const selectWordAtIndex = (wordText, startIndex) => {
+    setTextSelectionRange({ start: startIndex, end: startIndex + wordText.length });
+    // جدید: ذخیره داده‌های کلمه
+    const overrides = getWordOverrides(startIndex, wordText.length);
+    setSelectedWordData({
+        word: wordText,
+        startIndex,
+        length: wordText.length,
+        properties: overrides
+    });
+};
+const getWordOverrides = (wordStartIndex, wordLength) => {
+    if (!activeLayer.charOverrides) return {};
+    let merged = {};
+    for (let i = wordStartIndex; i < wordStartIndex + wordLength; i++) {
+        if (activeLayer.charOverrides[i]) {
+            merged = { ...merged, ...activeLayer.charOverrides[i] };
+        }
+    }
+    return merged;
+};
 
+const getCharOverrides = (charIndex) => {
+    return activeLayer.charOverrides?.[charIndex] || {};
+};
+
+const updateWordOverrides = (wordStartIndex, wordLength, updates) => {
+    const newOverrides = { ...activeLayer.charOverrides };
+    for (let i = wordStartIndex; i < wordStartIndex + wordLength; i++) {
+        newOverrides[i] = { ...newOverrides[i], ...updates };
+    }
+    updateActiveLayer({ charOverrides: newOverrides });
+};
+
+const updateCharOverrides = (charIndex, updates) => {
+    const newOverrides = { ...activeLayer.charOverrides };
+    newOverrides[charIndex] = { ...newOverrides[charIndex], ...updates };
+    updateActiveLayer({ charOverrides: newOverrides });
+};
             const handleFitToContent = (padding = 60) => {
                 const visibleLayers = layers.filter(l => l.visible);
                 if (visibleLayers.length === 0) {
@@ -1246,25 +1282,30 @@
                                                         direction: 'rtl'
                                                     }}
                                                 >
-                                                    {layer.runs && layer.runs.length > 0 ? (
-                                                        layer.text.split('').map((char, index) => {
-                                                            const activeRun = layer.runs.find(r => index >= r.start && index < r.end);
-                                                            return (
-                                                                <span 
-                                                                    key={index}
-                                                                    style={{
-                                                                        color: activeRun?.color || layer.color,
-                                                                        fontSize: activeRun?.fontSize ? `${activeRun.fontSize}px` : undefined,
-                                                                        fontFamily: activeRun?.fontFamily ? `"${activeRun.fontFamily}"` : undefined
-                                                                    }}
-                                                                >
-                                                                    {char}
-                                                                </span>
-                                                            );
-                                                        })
-                                                    ) : (
-                                                        layer.text
-                                                    )}
+{layer.runs && layer.runs.length > 0 ? (
+    layer.text.split('').map((char, index) => {
+        const charOver = layer.charOverrides?.[index] || {};
+        const activeRun = layer.runs.find(r => index >= r.start && index < r.end);
+        return (
+            <span 
+                key={index}
+                style={{
+                    color: charOver.color || activeRun?.color || layer.color,
+                    fontSize: charOver.fontSize ? `${charOver.fontSize}px` : activeRun?.fontSize ? `${activeRun.fontSize}px` : undefined,
+                    fontFamily: charOver.fontFamily ? `"${charOver.fontFamily}"` : activeRun?.fontFamily ? `"${activeRun.fontFamily}"` : undefined,
+                    fontWeight: charOver.bold ? '700' : undefined,
+                    fontStyle: charOver.italic ? 'italic' : undefined,
+                    transform: `translateX(${charOver.offsetX || 0}px) translateY(${charOver.offsetY || 0}px) rotate(${charOver.rotation || 0}deg) scaleX(${charOver.scaleX || 1}) scaleY(${charOver.scaleY || 1})`,
+                    display: 'inline-block'
+                }}
+            >
+                {char}
+            </span>
+        );
+    })
+) : (
+    layer.text
+)}
                                                 </div>
                                             )}
 
@@ -1519,94 +1560,505 @@
                                         </>
                                     )}
 
-                                    {/* MODE B: WORD FORMATTING */}
-                                    {editorMode === 'text_edit' && (
-                                        <div className="space-y-4">
-                                            <div className="p-3 rounded-xl bg-indigo-500/10 border border-indigo-500/20 text-indigo-300">
-                                                <i className="fas fa-info-circle ml-1"></i>
-                                                کلمات موردنظر را انتخاب کنید تا رنگ یا فونت اختصاصی روی آن‌ها اعمال شود.
-                                            </div>
+                                 {/* MODE B: WORD FORMATTING */}
+{editorMode === 'text_edit' && (
+    <div className="space-y-4">
+        <div className="p-3 rounded-xl bg-indigo-500/10 border border-indigo-500/20 text-indigo-300">
+            <i className="fas fa-info-circle ml-1"></i>
+            کلمات موردنظر را انتخاب کنید تا رنگ یا خصوصیات اختصاصی اعمال شود.
+        </div>
 
-                                            <div className="space-y-2">
-                                                <label className="font-bold opacity-90">انتخاب کلمه‌ای:</label>
-                                                <div className="flex flex-wrap gap-1.5">
-                                                    {activeLayer.text.split(' ').map((word, wIdx) => {
-                                                        const calculatedStart = activeLayer.text.indexOf(word);
-                                                        const isSelectedWord = textSelectionRange.start === calculatedStart && textSelectionRange.end === calculatedStart + word.length;
-                                                        return (
-                                                            <button 
-                                                                key={wIdx}
-                                                                onClick={() => selectWordAtIndex(word, calculatedStart)}
-                                                                className={`px-2.5 py-1 rounded-lg border text-xs transition ${
-                                                                    isSelectedWord ? 'bg-indigo-600 text-white border-indigo-500' : 'bg-white/5 hover:bg-white/10 border-white/10'
-                                                                }`}
-                                                            >
-                                                                {word}
-                                                            </button>
-                                                        );
-                                                    })}
-                                                </div>
-                                            </div>
+        <div className="space-y-2">
+            <label className="font-bold opacity-90">انتخاب کلمه‌ای:</label>
+            <div className="flex flex-wrap gap-1.5">
+                {activeLayer.text.split(' ').map((word, wIdx) => {
+                    const calculatedStart = activeLayer.text.indexOf(word);
+                    const isSelectedWord = textSelectionRange.start === calculatedStart && textSelectionRange.end === calculatedStart + word.length;
+                    return (
+                        <button 
+                            key={wIdx}
+                            onClick={() => selectWordAtIndex(word, calculatedStart)}
+                            className={`px-2.5 py-1 rounded-lg border text-xs transition ${
+                                isSelectedWord ? 'bg-indigo-600 text-white border-indigo-500' : 'bg-white/5 hover:bg-white/10 border-white/10'
+                            }`}
+                        >
+                            {word}
+                        </button>
+                    );
+                })}
+            </div>
+        </div>
 
-                                            <div className="space-y-3 pt-3 border-t border-white/10">
-                                                <span className="font-bold opacity-90 text-indigo-400">اعمال فرمت اختصاصی</span>
-                                                
-                                                <div className="space-y-1">
-                                                    <label className="opacity-80">رنگ کلمه انتخابی:</label>
-                                                    <input 
-                                                        type="color" 
-                                                        onChange={(e) => applyRangeFormatting('color', e.target.value)}
-                                                        className="h-9 w-full rounded cursor-pointer bg-transparent"
-                                                    />
-                                                </div>
+        {/* WORD PROPERTIES PANEL */}
+        {selectedWordData && (
+            <div className="p-4 rounded-xl border border-indigo-500/30 bg-indigo-500/5 space-y-3">
+                <div className="font-bold text-indigo-300">
+                    خصوصیات کلمه: <span className="text-white">"{selectedWordData.word}"</span>
+                </div>
 
-                                                <div className="space-y-1">
-                                                    <label className="opacity-80">فونت کلمه انتخابی:</label>
-                                                    <select 
-                                                        onChange={(e) => applyRangeFormatting('fontFamily', e.target.value)}
-                                                        className={`w-full p-2 rounded-xl border outline-none ${
-                                                            isDarkMode ? 'bg-slate-900 border-white/10' : 'bg-white border-slate-300'
-                                                        }`}
-                                                    >
-                                                        {fontList.map((f, i) => (
-                                                            <option key={i} value={f.family}>{f.name}</option>
-                                                        ))}
-                                                    </select>
-                                                </div>
+                {/* X Position */}
+                <div className="space-y-1">
+                    <label className="opacity-80 text-xs">X موقعیت:</label>
+                    <input 
+                        type="number" 
+                        value={selectedWordData.properties.wordOffsetX || 0}
+                        onChange={(e) => {
+                            const val = Number(e.target.value);
+                            updateWordOverrides(selectedWordData.startIndex, selectedWordData.length, { wordOffsetX: val });
+                            setSelectedWordData(prev => ({
+                                ...prev,
+                                properties: { ...prev.properties, wordOffsetX: val }
+                            }));
+                        }}
+                        className={`w-full p-2 rounded-lg border outline-none font-mono text-xs ${
+                            isDarkMode ? 'bg-white/5 border-white/10' : 'bg-white border-slate-300'
+                        }`}
+                    />
+                </div>
 
-                                                <button 
-                                                    onClick={() => updateActiveLayer({ runs: [] })}
-                                                    className="w-full py-2 rounded-xl bg-red-500/20 text-red-300 hover:bg-red-500/30 transition text-xs"
-                                                >
-                                                    پاکسازی استایل کلمات
-                                                </button>
-                                            </div>
-                                        </div>
-                                    )}
+                {/* Y Position */}
+                <div className="space-y-1">
+                    <label className="opacity-80 text-xs">Y موقعیت:</label>
+                    <input 
+                        type="number" 
+                        value={selectedWordData.properties.wordOffsetY || 0}
+                        onChange={(e) => {
+                            const val = Number(e.target.value);
+                            updateWordOverrides(selectedWordData.startIndex, selectedWordData.length, { wordOffsetY: val });
+                            setSelectedWordData(prev => ({
+                                ...prev,
+                                properties: { ...prev.properties, wordOffsetY: val }
+                            }));
+                        }}
+                        className={`w-full p-2 rounded-lg border outline-none font-mono text-xs ${
+                            isDarkMode ? 'bg-white/5 border-white/10' : 'bg-white border-slate-300'
+                        }`}
+                    />
+                </div>
 
-                                    {/* MODE C: CHARACTER MODE */}
-                                    {editorMode === 'character' && (
-                                        <div className="space-y-4">
-                                            <div className="p-3 rounded-xl bg-indigo-500/10 border border-indigo-500/20 text-indigo-300">
-                                                <i className="fas fa-font ml-1"></i>
-                                                روی هر حرف کلیک کنید تا جداگانه مدیریت شود.
-                                            </div>
+                {/* Font Size */}
+                <div className="space-y-1">
+                    <label className="opacity-80 text-xs">اندازه (pt):</label>
+                    <input 
+                        type="number" 
+                        value={selectedWordData.properties.fontSize || activeLayer.fontSize}
+                        onChange={(e) => {
+                            const val = Number(e.target.value);
+                            updateWordOverrides(selectedWordData.startIndex, selectedWordData.length, { fontSize: val });
+                            setSelectedWordData(prev => ({
+                                ...prev,
+                                properties: { ...prev.properties, fontSize: val }
+                            }));
+                        }}
+                        className={`w-full p-2 rounded-lg border outline-none font-mono text-xs ${
+                            isDarkMode ? 'bg-white/5 border-white/10' : 'bg-white border-slate-300'
+                        }`}
+                    />
+                </div>
 
-                                            <div className="flex flex-wrap gap-1">
-                                                {activeLayer.text.split('').map((char, cIdx) => (
-                                                    <button 
-                                                        key={cIdx}
-                                                        onClick={() => setSelectedCharIndex(cIdx)}
-                                                        className={`w-8 h-8 rounded-lg border text-sm font-bold flex items-center justify-center transition ${
-                                                            selectedCharIndex === cIdx ? 'bg-indigo-600 text-white border-indigo-400' : 'bg-white/5 hover:bg-white/10 border-white/10'
-                                                        }`}
-                                                    >
-                                                        {char === ' ' ? '␣' : char}
-                                                    </button>
-                                                ))}
-                                            </div>
-                                        </div>
-                                    )}
+                {/* Rotation */}
+                <div className="space-y-1">
+                    <label className="opacity-80 text-xs">چرخش (درجه):</label>
+                    <input 
+                        type="number" 
+                        value={selectedWordData.properties.rotation || 0}
+                        onChange={(e) => {
+                            const val = Number(e.target.value);
+                            updateWordOverrides(selectedWordData.startIndex, selectedWordData.length, { rotation: val });
+                            setSelectedWordData(prev => ({
+                                ...prev,
+                                properties: { ...prev.properties, rotation: val }
+                            }));
+                        }}
+                        className={`w-full p-2 rounded-lg border outline-none font-mono text-xs ${
+                            isDarkMode ? 'bg-white/5 border-white/10' : 'bg-white border-slate-300'
+                        }`}
+                    />
+                </div>
+
+                {/* Color */}
+                <div className="space-y-1">
+                    <label className="opacity-80 text-xs">رنگ:</label>
+                    <input 
+                        type="color" 
+                        value={selectedWordData.properties.color || activeLayer.color}
+                        onChange={(e) => {
+                            const val = e.target.value;
+                            updateWordOverrides(selectedWordData.startIndex, selectedWordData.length, { color: val });
+                            setSelectedWordData(prev => ({
+                                ...prev,
+                                properties: { ...prev.properties, color: val }
+                            }));
+                        }}
+                        className="h-10 w-full rounded-lg cursor-pointer"
+                    />
+                </div>
+
+                {/* Scale X */}
+                <div className="space-y-1">
+                    <label className="opacity-80 text-xs">مقیاس X:</label>
+                    <input 
+                        type="number" 
+                        step="0.1"
+                        value={selectedWordData.properties.scaleX || 1}
+                        onChange={(e) => {
+                            const val = Number(e.target.value);
+                            updateWordOverrides(selectedWordData.startIndex, selectedWordData.length, { scaleX: val });
+                            setSelectedWordData(prev => ({
+                                ...prev,
+                                properties: { ...prev.properties, scaleX: val }
+                            }));
+                        }}
+                        className={`w-full p-2 rounded-lg border outline-none font-mono text-xs ${
+                            isDarkMode ? 'bg-white/5 border-white/10' : 'bg-white border-slate-300'
+                        }`}
+                    />
+                </div>
+
+                {/* Scale Y */}
+                <div className="space-y-1">
+                    <label className="opacity-80 text-xs">مقیاس Y:</label>
+                    <input 
+                        type="number" 
+                        step="0.1"
+                        value={selectedWordData.properties.scaleY || 1}
+                        onChange={(e) => {
+                            const val = Number(e.target.value);
+                            updateWordOverrides(selectedWordData.startIndex, selectedWordData.length, { scaleY: val });
+                            setSelectedWordData(prev => ({
+                                ...prev,
+                                properties: { ...prev.properties, scaleY: val }
+                            }));
+                        }}
+                        className={`w-full p-2 rounded-lg border outline-none font-mono text-xs ${
+                            isDarkMode ? 'bg-white/5 border-white/10' : 'bg-white border-slate-300'
+                        }`}
+                    />
+                </div>
+
+                {/* Bold */}
+                <div className="flex items-center gap-2">
+                    <input 
+                        type="checkbox" 
+                        id="wordBold"
+                        checked={selectedWordData.properties.bold || false}
+                        onChange={(e) => {
+                            updateWordOverrides(selectedWordData.startIndex, selectedWordData.length, { bold: e.target.checked });
+                            setSelectedWordData(prev => ({
+                                ...prev,
+                                properties: { ...prev.properties, bold: e.target.checked }
+                            }));
+                        }}
+                        className="w-4 h-4 cursor-pointer"
+                    />
+                    <label htmlFor="wordBold" className="opacity-80 text-xs cursor-pointer">توپُر (Bold)</label>
+                </div>
+
+                {/* Italic */}
+                <div className="flex items-center gap-2">
+                    <input 
+                        type="checkbox" 
+                        id="wordItalic"
+                        checked={selectedWordData.properties.italic || false}
+                        onChange={(e) => {
+                            updateWordOverrides(selectedWordData.startIndex, selectedWordData.length, { italic: e.target.checked });
+                            setSelectedWordData(prev => ({
+                                ...prev,
+                                properties: { ...prev.properties, italic: e.target.checked }
+                            }));
+                        }}
+                        className="w-4 h-4 cursor-pointer"
+                    />
+                    <label htmlFor="wordItalic" className="opacity-80 text-xs cursor-pointer">کج (Italic)</label>
+                </div>
+
+                {/* Reset */}
+                <button 
+                    onClick={() => {
+                        const newOverrides = { ...activeLayer.charOverrides };
+                        for (let i = selectedWordData.startIndex; i < selectedWordData.startIndex + selectedWordData.length; i++) {
+                            delete newOverrides[i];
+                        }
+                        updateActiveLayer({ charOverrides: newOverrides });
+                        setSelectedWordData({
+                            ...selectedWordData,
+                            properties: {}
+                        });
+                    }}
+                    className="w-full py-2 rounded-lg bg-red-500/20 text-red-300 hover:bg-red-500/30 transition text-xs font-medium"
+                >
+                    بازنشانی خصوصیات
+                </button>
+            </div>
+        )}
+
+        <div className="space-y-3 pt-3 border-t border-white/10">
+            <span className="font-bold opacity-90 text-indigo-400">اعمال فرمت اختصاصی (روش قدیم)</span>
+            
+            <div className="space-y-1">
+                <label className="opacity-80">رنگ کلمه انتخابی:</label>
+                <input 
+                    type="color" 
+                    onChange={(e) => applyRangeFormatting('color', e.target.value)}
+                    className="h-9 w-full rounded cursor-pointer bg-transparent"
+                />
+            </div>
+
+            <div className="space-y-1">
+                <label className="opacity-80">فونت کلمه انتخابی:</label>
+                <select 
+                    onChange={(e) => applyRangeFormatting('fontFamily', e.target.value)}
+                    className={`w-full p-2 rounded-xl border outline-none ${
+                        isDarkMode ? 'bg-slate-900 border-white/10' : 'bg-white border-slate-300'
+                    }`}
+                >
+                    {fontList.map((f, i) => (
+                        <option key={i} value={f.family}>{f.name}</option>
+                    ))}
+                </select>
+            </div>
+
+            <button 
+                onClick={() => updateActiveLayer({ runs: [] })}
+                className="w-full py-2 rounded-xl bg-red-500/20 text-red-300 hover:bg-red-500/30 transition text-xs"
+            >
+                پاکسازی استایل کلمات
+            </button>
+        </div>
+    </div>
+)}
+{/* MODE C: CHARACTER MODE */}
+{editorMode === 'character' && (
+    <div className="space-y-4">
+        <div className="p-3 rounded-xl bg-indigo-500/10 border border-indigo-500/20 text-indigo-300">
+            <i className="fas fa-font ml-1"></i>
+            روی هر حرف کلیک کنید تا جداگانه مدیریت شود.
+        </div>
+
+        <div className="flex flex-wrap gap-1">
+            {activeLayer.text.split('').map((char, cIdx) => (
+                <button 
+                    key={cIdx}
+                    onClick={() => {
+                        setSelectedCharIndex(cIdx);
+                        const overrides = getCharOverrides(cIdx);
+                        setSelectedCharData({
+                            char,
+                            index: cIdx,
+                            properties: overrides
+                        });
+                    }}
+                    className={`w-8 h-8 rounded-lg border text-sm font-bold flex items-center justify-center transition ${
+                        selectedCharIndex === cIdx ? 'bg-indigo-600 text-white border-indigo-400' : 'bg-white/5 hover:bg-white/10 border-white/10'
+                    }`}
+                >
+                    {char === ' ' ? '␣' : char}
+                </button>
+            ))}
+        </div>
+
+        {/* CHARACTER PROPERTIES PANEL */}
+        {selectedCharIndex !== null && selectedCharData && (
+            <div className="p-4 rounded-xl border border-indigo-500/30 bg-indigo-500/5 space-y-3">
+                <div className="font-bold text-indigo-300">
+                    خصوصیات حرف: <span className="text-white">"{selectedCharData.char === ' ' ? 'فاصله' : selectedCharData.char}"</span>
+                </div>
+
+                {/* X Position */}
+                <div className="space-y-1">
+                    <label className="opacity-80 text-xs">X موقعیت:</label>
+                    <input 
+                        type="number" 
+                        value={selectedCharData.properties.offsetX || 0}
+                        onChange={(e) => {
+                            const val = Number(e.target.value);
+                            updateCharOverrides(selectedCharIndex, { offsetX: val });
+                            setSelectedCharData(prev => ({
+                                ...prev,
+                                properties: { ...prev.properties, offsetX: val }
+                            }));
+                        }}
+                        className={`w-full p-2 rounded-lg border outline-none font-mono text-xs ${
+                            isDarkMode ? 'bg-white/5 border-white/10' : 'bg-white border-slate-300'
+                        }`}
+                    />
+                </div>
+
+                {/* Y Position */}
+                <div className="space-y-1">
+                    <label className="opacity-80 text-xs">Y موقعیت:</label>
+                    <input 
+                        type="number" 
+                        value={selectedCharData.properties.offsetY || 0}
+                        onChange={(e) => {
+                            const val = Number(e.target.value);
+                            updateCharOverrides(selectedCharIndex, { offsetY: val });
+                            setSelectedCharData(prev => ({
+                                ...prev,
+                                properties: { ...prev.properties, offsetY: val }
+                            }));
+                        }}
+                        className={`w-full p-2 rounded-lg border outline-none font-mono text-xs ${
+                            isDarkMode ? 'bg-white/5 border-white/10' : 'bg-white border-slate-300'
+                        }`}
+                    />
+                </div>
+
+                {/* Font Size */}
+                <div className="space-y-1">
+                    <label className="opacity-80 text-xs">اندازه (pt):</label>
+                    <input 
+                        type="number" 
+                        value={selectedCharData.properties.fontSize || activeLayer.fontSize}
+                        onChange={(e) => {
+                            const val = Number(e.target.value);
+                            updateCharOverrides(selectedCharIndex, { fontSize: val });
+                            setSelectedCharData(prev => ({
+                                ...prev,
+                                properties: { ...prev.properties, fontSize: val }
+                            }));
+                        }}
+                        className={`w-full p-2 rounded-lg border outline-none font-mono text-xs ${
+                            isDarkMode ? 'bg-white/5 border-white/10' : 'bg-white border-slate-300'
+                        }`}
+                    />
+                </div>
+
+                {/* Rotation */}
+                <div className="space-y-1">
+                    <label className="opacity-80 text-xs">چرخش (درجه):</label>
+                    <input 
+                        type="number" 
+                        value={selectedCharData.properties.rotation || 0}
+                        onChange={(e) => {
+                            const val = Number(e.target.value);
+                            updateCharOverrides(selectedCharIndex, { rotation: val });
+                            setSelectedCharData(prev => ({
+                                ...prev,
+                                properties: { ...prev.properties, rotation: val }
+                            }));
+                        }}
+                        className={`w-full p-2 rounded-lg border outline-none font-mono text-xs ${
+                            isDarkMode ? 'bg-white/5 border-white/10' : 'bg-white border-slate-300'
+                        }`}
+                    />
+                </div>
+
+                {/* Color */}
+                <div className="space-y-1">
+                    <label className="opacity-80 text-xs">رنگ:</label>
+                    <input 
+                        type="color" 
+                        value={selectedCharData.properties.color || activeLayer.color}
+                        onChange={(e) => {
+                            const val = e.target.value;
+                            updateCharOverrides(selectedCharIndex, { color: val });
+                            setSelectedCharData(prev => ({
+                                ...prev,
+                                properties: { ...prev.properties, color: val }
+                            }));
+                        }}
+                        className="h-10 w-full rounded-lg cursor-pointer"
+                    />
+                </div>
+
+                {/* Scale X */}
+                <div className="space-y-1">
+                    <label className="opacity-80 text-xs">مقیاس X:</label>
+                    <input 
+                        type="number" 
+                        step="0.1"
+                        value={selectedCharData.properties.scaleX || 1}
+                        onChange={(e) => {
+                            const val = Number(e.target.value);
+                            updateCharOverrides(selectedCharIndex, { scaleX: val });
+                            setSelectedCharData(prev => ({
+                                ...prev,
+                                properties: { ...prev.properties, scaleX: val }
+                            }));
+                        }}
+                        className={`w-full p-2 rounded-lg border outline-none font-mono text-xs ${
+                            isDarkMode ? 'bg-white/5 border-white/10' : 'bg-white border-slate-300'
+                        }`}
+                    />
+                </div>
+
+                {/* Scale Y */}
+                <div className="space-y-1">
+                    <label className="opacity-80 text-xs">مقیاس Y:</label>
+                    <input 
+                        type="number" 
+                        step="0.1"
+                        value={selectedCharData.properties.scaleY || 1}
+                        onChange={(e) => {
+                            const val = Number(e.target.value);
+                            updateCharOverrides(selectedCharIndex, { scaleY: val });
+                            setSelectedCharData(prev => ({
+                                ...prev,
+                                properties: { ...prev.properties, scaleY: val }
+                            }));
+                        }}
+                        className={`w-full p-2 rounded-lg border outline-none font-mono text-xs ${
+                            isDarkMode ? 'bg-white/5 border-white/10' : 'bg-white border-slate-300'
+                        }`}
+                    />
+                </div>
+
+                {/* Bold */}
+                <div className="flex items-center gap-2">
+                    <input 
+                        type="checkbox" 
+                        id="charBold"
+                        checked={selectedCharData.properties.bold || false}
+                        onChange={(e) => {
+                            updateCharOverrides(selectedCharIndex, { bold: e.target.checked });
+                            setSelectedCharData(prev => ({
+                                ...prev,
+                                properties: { ...prev.properties, bold: e.target.checked }
+                            }));
+                        }}
+                        className="w-4 h-4 cursor-pointer"
+                    />
+                    <label htmlFor="charBold" className="opacity-80 text-xs cursor-pointer">توپُر (Bold)</label>
+                </div>
+
+                {/* Italic */}
+                <div className="flex items-center gap-2">
+                    <input 
+                        type="checkbox" 
+                        id="charItalic"
+                        checked={selectedCharData.properties.italic || false}
+                        onChange={(e) => {
+                            updateCharOverrides(selectedCharIndex, { italic: e.target.checked });
+                            setSelectedCharData(prev => ({
+                                ...prev,
+                                properties: { ...prev.properties, italic: e.target.checked }
+                            }));
+                        }}
+                        className="w-4 h-4 cursor-pointer"
+                    />
+                    <label htmlFor="charItalic" className="opacity-80 text-xs cursor-pointer">کج (Italic)</label>
+                </div>
+
+                {/* Reset */}
+                <button 
+                    onClick={() => {
+                        const newOverrides = { ...activeLayer.charOverrides };
+                        delete newOverrides[selectedCharIndex];
+                        updateActiveLayer({ charOverrides: newOverrides });
+                        setSelectedCharData({
+                            ...selectedCharData,
+                            properties: {}
+                        });
+                    }}
+                    className="w-full py-2 rounded-lg bg-red-500/20 text-red-300 hover:bg-red-500/30 transition text-xs font-medium"
+                >
+                    بازنشانی خصوصیات
+                </button>
+            </div>
+        )}
+    </div>
+)}
 
                                     {/* ARTBOARD GLOBAL SETTINGS */}
                                     <div className="space-y-3 pt-4 border-t border-white/10">
