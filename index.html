@@ -639,9 +639,8 @@
                 showToastMessage('فرمت روی محدوده انتخابی اعمال شد');
             };
 
-          const selectWordAtIndex = (wordText, startIndex) => {
+const selectWordAtIndex = (wordText, startIndex) => {
     setTextSelectionRange({ start: startIndex, end: startIndex + wordText.length });
-    // جدید: ذخیره داده‌های کلمه
     const overrides = getWordOverrides(startIndex, wordText.length);
     setSelectedWordData({
         word: wordText,
@@ -649,6 +648,35 @@
         length: wordText.length,
         properties: overrides
     });
+};
+
+const getWordOverrides = (wordStartIndex, wordLength) => {
+    if (!activeLayer.charOverrides) return {};
+    let merged = {};
+    for (let i = wordStartIndex; i < wordStartIndex + wordLength; i++) {
+        if (activeLayer.charOverrides[i]) {
+            merged = { ...merged, ...activeLayer.charOverrides[i] };
+        }
+    }
+    return merged;
+};
+
+const getCharOverrides = (charIndex) => {
+    return activeLayer.charOverrides?.[charIndex] || {};
+};
+
+const updateWordOverrides = (wordStartIndex, wordLength, updates) => {
+    const newOverrides = { ...activeLayer.charOverrides };
+    for (let i = wordStartIndex; i < wordStartIndex + wordLength; i++) {
+        newOverrides[i] = { ...newOverrides[i], ...updates };
+    }
+    updateActiveLayer({ charOverrides: newOverrides });
+};
+
+const updateCharOverrides = (charIndex, updates) => {
+    const newOverrides = { ...activeLayer.charOverrides };
+    newOverrides[charIndex] = { ...newOverrides[charIndex], ...updates };
+    updateActiveLayer({ charOverrides: newOverrides });
 };
 const getWordOverrides = (wordStartIndex, wordLength) => {
     if (!activeLayer.charOverrides) return {};
